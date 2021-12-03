@@ -1,0 +1,396 @@
+<head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+
+    <!-- RIGHT PANEL CSS -->
+    <style>
+        /* right panel */
+        .insights-wrapper {
+            display: block;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 15px;
+        }
+
+        .insights-wrapper-legends {
+            max-height: 280px;
+        }
+
+        .insights-wrapper-buttons {
+            background-color: white;
+        }
+
+        .title-side {
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            font-size: 14px;
+            font-weight: lighter;
+        }
+
+        .title-center {
+            text-align: center;
+            margin: auto;
+            text-transform: uppercase;
+            font-size: 16px;
+            font-weight: lighter;
+        }
+
+        .MTS {
+            color: gray;
+        }
+
+        .stat-name {
+            margin-top: 10px;
+            text-transform: capitalize;
+            color: black;
+            font-weight: 320;
+            font-size: 13px;
+            margin-left: 0px;
+        }
+
+        #graph-container {
+            width: 100%;
+        }
+
+        #width-px-input {
+            width: 70px;
+        }
+    </style>
+
+    <script src="//unpkg.com/three"></script>
+    <script src="//unpkg.com/3d-force-graph"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/d3/6.7.0/d3.min.js"></script>
+    <script src="https://unpkg.com/three/examples/js/exporters/GLTFExporter.js"></script>
+
+    <style>
+        #info {
+            color: #ccc;
+            text-align: center;
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+        }
+    </style>
+
+
+</head>
+
+<body>
+    <div class="centered">
+        <div class="row">
+            <div class="col-md-10">
+                <div id="3d-graph"></div>
+            </div>
+
+            <div class="col-md-2">
+                <div class="right-panel">
+                    <div class="insights-wrapper">
+
+                        <div class="stat-name view-switcher">
+                            <p> Choose Dataset: </p>
+                              <input type="radio" class="dataset-type-input" value="poa" checked="checked"
+                                name="dataset-input">
+                              <label for="poa">POA Sarafu data</label><br>
+                              <input type="radio" class="dataset-type-input" value="xdai" name="dataset-input">
+                              <label for="xdai">Sarafu xdai data</label><br>
+                        </div>
+
+                        <div class="stat-name">
+                              <label for="stop-animation">Stop Animation</label>
+                              <input type="checkbox" id="stop-animation-checkbox" class="stop-animation">
+                        </div>
+
+                        <div class="stat-name">
+                              <label for="camera-orbitting">Camera Orbitting</label>
+                              <input type="checkbox" id="camera-orbitting-checkbox" class="camera-orbitting">
+                        </div>
+
+                        <div class="stat-name">
+                              <label for="camera-distance">Camera Orbitting Distance</label>
+                              <input type="number" id="camera-distance" class="camera-distance" value="1000">
+                        </div>
+
+                        <div class="stat-name">
+                              <label for="animation-interval">Animation Interval (seconds)</label>
+                              <input type="number" id="animation-interval-input" class="animation-interval" value="2">
+                        </div>
+
+                        <div class="stat-name">
+                            <p> Node Color: </p>
+                              <input type="radio" class="node-color-input" value="white" checked="checked"
+                                name="node-color">
+                              <label for="white">White</label><br>
+                              <input type="radio" class="node-color-input" value="grey" name="node-color">
+                              <label for="grey">Grey</label><br>
+                        </div>
+
+                        <div class="stat-name">
+                              <label for="custom-node-geometries">Custom Node Geometries</label>
+                              <input type="checkbox" id="custom-node-geometries-checkbox"
+                                class="custom-node-geometries">
+                        </div>
+
+                        <div class="stat-name">
+                            <button id="export_scene">Export Graph</button>
+                        </div>
+
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        let dailyDates = [];
+        let userBalances = {};
+
+        fetchDataAndDrawChart('POA_tx_all_pub.csv', '', 'POA_users_all_pub.csv');
+
+        function drawChart(data, usersData) {
+            dailyDates = fetchDailyDates(data);
+
+            usersData.forEach(function (d) {
+                userBalances[d.id] = +(d.bal || d.final_bal);
+            });
+
+            let gData = {
+                nodes: extractNodes(dailyDates[0]),
+                links: extractEdges(dailyDates[0])
+            }
+
+            let nodeColor = d3.selectAll('.node-color-input').filter(function (d) { return d3.select(this).property('checked') }).node().value;
+
+            const Graph = ForceGraph3D()
+                (document.getElementById('3d-graph'))
+                .nodeColor((d) => nodeColor)
+                .linkAutoColorBy((d, i) => gData.nodes[Math.floor(Math.random() * gData.nodes.length) + 0].group)
+                .linkOpacity(0.5)
+                .width(1200)
+                .nodeLabel('id')
+                .nodeVal(function (d) {
+                    let balance = userBalances[d.id];
+
+                    if (balance < 100) return 1;
+                    if (balance < 500) return 2;
+                    if (balance < 1000) return 3;
+                    if (balance < 5000) return 4;
+                    if (balance < 10000) return 5;
+
+                    return 6;
+                })
+                .linkDirectionalParticles('value')
+                .linkDirectionalParticleSpeed(d => d.value * 0.001)
+                .graphData(gData);
+
+            let customNodeGeometries = d3.select('#custom-node-geometries-checkbox').property('checked');
+
+            if (customNodeGeometries) {
+                addCustomNodeGeometries(Graph);
+            }
+
+            animateGraph(Graph, gData);
+            cameraOrbitting(Graph);
+            datasetChangeListener();
+            nodeColorListener(Graph);
+            customGeometriesListener(Graph);
+            exportGraphListener(Graph);
+        }
+
+        function animateGraph(Graph, gData) {
+            let daysCounter = 1;
+            let animationTime = +d3.select('#animation-interval-input').node().value * 1000;
+
+            let animateGraph = function () {
+                let animationTime = +d3.select('#animation-interval-input').node().value * 1000;
+                setTimeout(animateGraph, animationTime);
+
+                let stopAnimation = d3.select('#stop-animation-checkbox').property('checked');
+
+                if (stopAnimation || !dailyDates[daysCounter]) return;
+
+                gData.nodes = extractNodes(dailyDates[daysCounter])
+                gData.links = extractEdges(dailyDates[daysCounter]);
+
+                Graph
+                    .graphData(gData)
+                    .linkAutoColorBy((d, i) => gData.nodes[Math.floor(Math.random() * gData.nodes.length) + 0].group);
+
+                daysCounter++;
+            }
+
+            setTimeout(animateGraph, animationTime);
+        }
+
+        function cameraOrbitting(Graph) {
+            // camera orbit
+            let angle = 0;
+            let distance = d3.select('#camera-distance').node().value;
+
+            setInterval(() => {
+                let cameraOrbitting = d3.select('#camera-orbitting-checkbox').property('checked');
+                if (!cameraOrbitting) return;
+
+                Graph.cameraPosition({
+                    x: distance * Math.sin(angle),
+                    z: distance * Math.cos(angle)
+                });
+                angle += Math.PI / 300;
+            }, 10);
+        }
+
+        function addCustomNodeGeometries(Graph) {
+            Graph.nodeThreeObject(({ id, i }) => new THREE.Mesh(
+                [
+                    new THREE.BoxGeometry(Math.random() * 20, Math.random() * 20, Math.random() * 20),
+                    new THREE.ConeGeometry(Math.random() * 10, Math.random() * 20),
+                    new THREE.CylinderGeometry(Math.random() * 10, Math.random() * 10, Math.random() * 20),
+                    new THREE.DodecahedronGeometry(Math.random() * 10),
+                    new THREE.SphereGeometry(Math.random() * 10),
+                    new THREE.TorusGeometry(Math.random() * 10, Math.random() * 2),
+                    new THREE.TorusKnotGeometry(Math.random() * 10, Math.random() * 2)
+                ][Math.floor(Math.random() * 7) + 0],
+                new THREE.MeshLambertMaterial({
+                    color: Math.round(Math.random() * Math.pow(2, 24)),
+                    transparent: true,
+                    opacity: 0.75
+                })
+            ));
+        }
+
+        function customGeometriesListener(Graph) {
+            d3.select('#custom-node-geometries-checkbox').on('change', function () {
+                let checked = d3.select(this).property('checked');
+
+                if (checked) addCustomNodeGeometries(Graph);
+                else Graph.nodeThreeObject(false);
+            });
+        }
+
+        function exportGraphListener(Graph) {
+            d3.select('#export_scene').on('click', function () {
+                exportGLTF(Graph.scene());
+            });
+        }
+
+        function exportGLTF(input) {
+            let gltfExporter = new THREE.GLTFExporter();
+            let options = {
+                onlyVisible: true
+            };
+
+            gltfExporter.parse(input, function (result) {
+                if (result instanceof ArrayBuffer) {
+                    saveArrayBuffer(result, 'scene.glb');
+                } else {
+                    let output = JSON.stringify(result, null, 2);
+                    saveString(output, 'scene.gltf');
+                }
+            }, options);
+        }
+
+        function save(blob, filename) {
+            let link = document.createElement('a');
+            link.style.display = 'none';
+            document.body.appendChild(link);
+
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            link.remove();
+        }
+
+        function saveString(text, filename) {
+            save(new Blob([text], { type: 'text/plain' }), filename);
+        }
+
+        function nodeColorListener(Graph) {
+            d3.selectAll('.node-color-input').on('change', function () {
+                let chosenColor = this.value;
+                Graph.nodeColor((d) => chosenColor);
+            });
+        }
+
+        function datasetChangeListener() {
+            d3.selectAll('.dataset-type-input').on('change', function () {
+                let chosenDataset = this.value;
+                let datasetFileName = '';
+                let usersDataset = '';
+
+                if (chosenDataset === 'poa') {
+                    datasetFileName = 'POA_tx_all_pub.csv';
+                    usersDataset = 'POA_users_all_pub.csv';
+                }
+
+                if (chosenDataset === 'xdai') {
+                    datasetFileName = 'xdai_datasets/xdai_transactions_1.csv';
+                    usersDataset = 'xdai_datasets/users_all_pub_20200125-20211005-all_time.csv';
+                }
+
+                fetchDataAndDrawChart(datasetFileName, chosenDataset, usersDataset);
+            });
+        }
+
+        function fetchDataAndDrawChart(datasetName, chosenDataset, usersDataset) {
+            d3.csv(datasetName).then(function (transactionsData) {
+                d3.csv(usersDataset).then(function (usersData) {
+                    drawChart(transactionsData, usersData);
+                });
+            });
+
+            if (chosenDataset === 'xdai') {
+                let datasetNames = ['xdai_datasets/xdai_transactions_2.csv', 'xdai_datasets/xdai_transactions_3.csv', 'xdai_datasets/xdai_transactions_4.csv', 'xdai_datasets/xdai_transactions_5.csv', 'xdai_datasets/xdai_transactions_6.csv', 'xdai_datasets/xdai_transactions_7.csv', 'xdai_datasets/xdai_transactions_8.csv', 'xdai_datasets/xdai_transactions_9.csv', 'xdai_datasets/xdai_transactions_10.csv', 'xdai_datasets/xdai_transactions_11.csv', 'xdai_datasets/xdai_transactions_12.csv'];
+
+                datasetNames.forEach(function (datasetName, index) {
+                    setTimeout(function () {
+                        d3.csv(datasetName).then(function (data) {
+                            dailyDates = dailyDates.concat(fetchDailyDates(data));
+                        });
+                    }, index * 3000);
+                });
+            }
+        }
+
+        function fetchDailyDates(data) {
+            let groupedRecordsArray = [];
+            let groupedRecordsObject = {};
+
+            data.forEach(function (record) {
+                let date = new Date(record.timeset);
+                let dateString = date.getFullYear() + '-' + date.getMonth() + '-' + date.getDate();
+
+                if (groupedRecordsObject[dateString])
+                    groupedRecordsObject[dateString].push(record);
+                else groupedRecordsObject[dateString] = [record];
+            });
+
+            for (let key in groupedRecordsObject)
+                groupedRecordsArray.push(groupedRecordsObject[key]);
+
+            return groupedRecordsArray;
+        }
+
+        function extractNodes(records) {
+            let nodesIds = Array.from(new Set(records.map(d => [d.source, d.target]).flat()));
+
+            let nodes = nodesIds.map(function (id, i) {
+                return {
+                    id: id,
+                    group: i % 30
+                };
+            });
+
+            return nodes;
+        }
+
+        function extractEdges(records) {
+            let edges = records.map(function (d) {
+                return { source: d.source, target: d.target, weight: d.weight, value: 8 };
+            });
+
+            return edges;
+        }
+    </script>
+
+</body>
